@@ -1,1 +1,108 @@
+import streamlit as st
+import pandas as pd
+import networkx as nx
+import plotly.graph_objects as go
+import numpy as np
+
+# Load dataset
+data = pd.read_csv('annual-enterprise-dataset.csv')
+
+st.set_page_config(page_title="The Industry Dating Game", layout="wide")
+st.title("💖 The Industry Dating Game: Matching Industries for Synergy 💖")
+
+# Sidebar for filtering
+st.sidebar.header("🔍 Filter Industries")
+variable_categories = data['Variable_category'].unique()
+selected_category = st.sidebar.selectbox("Select Variable Category:", variable_categories)
+
+# Filter data based on selected category
+filtered_data = data[data['Variable_category'] == selected_category]
+
+# Prepare data for correlation analysis
+pivot_data = filtered_data.pivot_table(index='Year', columns='Industry', values='Total_income', aggfunc='sum').fillna(0)
+correlation_matrix = pivot_data.corr()
+
+# Create network graph
+G = nx.Graph()
+
+# Add nodes
+for industry in correlation_matrix.columns:
+    G.add_node(industry)
+
+# Add edges based on correlation threshold
+threshold = 0.7  # Can be adjusted
+for i, industry1 in enumerate(correlation_matrix.columns):
+    for j, industry2 in enumerate(correlation_matrix.columns):
+        if i < j:
+            synergy_score = correlation_matrix.iloc[i, j]
+            if synergy_score >= threshold:
+                G.add_edge(industry1, industry2, weight=synergy_score)
+
+# Visualize network graph
+pos = nx.spring_layout(G, seed=42)
+edge_x, edge_y, edge_weights = [], [], []
+for edge in G.edges(data=True):
+    x0, y0 = pos[edge[0]]
+    x1, y1 = pos[edge[1]]
+    edge_x.extend([x0, x1, None])
+    edge_y.extend([y0, y1, None])
+    edge_weights.append(edge[2]['weight'])
+
+node_x, node_y = [], []
+for node in G.nodes():
+    x, y = pos[node]
+    node_x.append(x)
+    node_y.append(y)
+
+edge_trace = go.Scatter(
+    x=edge_x, y=edge_y,
+    line=dict(width=1, color='#888'),
+    hoverinfo='none',
+    mode='lines'
+)
+
+node_trace = go.Scatter(
+    x=node_x, y=node_y,
+    mode='markers+text',
+    text=[node for node in G.nodes()],
+    textposition="top center",
+    hoverinfo='text',
+    marker=dict(
+        showscale=True,
+        colorscale='YlGnBu',
+        color=[],
+        size=20,
+        colorbar=dict(thickness=15, title='Synergy Connections', xanchor='left', titleside='right')
+    )
+)
+
+node_adjacencies = []
+for node in G.nodes():
+    node_adjacencies.append(len(list(G.adj[node])))
+node_trace.marker.color = node_adjacencies
+
+fig = go.Figure(data=[edge_trace, node_trace],
+                layout=go.Layout(
+                    title='💞 Industry Synergy Network 💞',
+                    titlefont_size=16,
+                    showlegend=False,
+                    hovermode='closest',
+                    margin=dict(b=20, l=5, r=5, t=40),
+                    xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                    yaxis=dict(showgrid=False, zeroline=False, showticklabels=False)
+                ))
+
+st.plotly_chart(fig, use_container_width=True)
+
+# Love Compatibility Meter
+st.subheader("💘 Love Compatibility Meter")
+industries = list(G.nodes())
+selected_pair = st.selectbox("Select Industry Pair:", [(a, b) for a in industries for b in industries if a != b])
+
+score = correlation_matrix.loc[selected_pair[0], selected_pair[1]] if selected_pair else 0
+
+st.metric(label=f"💡 Compatibility between {selected_pair[0]} and {selected_pair[1]}", value=f"{score:.2f}",
+          delta="High" if score > 0.8 else ("Medium" if score > 0.5 else "Low"))
+
+st.caption("✨ Explore how industries complement each other based on their total income correlation over time!")
 
